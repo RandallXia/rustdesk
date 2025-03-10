@@ -132,6 +132,8 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
                     requestMediaProjection()
+                    val myId = FFI.mainGetMyId()
+                    Log.d(logTag + "R", "mainGetMyId: $myId")
                     result.success(true)
                 }
                 "start_capture" -> {

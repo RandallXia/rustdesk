@@ -120,6 +120,16 @@ pub fn get_clipboards(client: bool) -> Option<MultiClipboards> {
 }
 
 #[no_mangle]
+pub extern "system" fn Java_ffi_FFI_getMyId(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let id = get_id();
+    let output = env.new_string(id).expect("Failed to create Java string");
+    output.into_raw()
+}
+
+#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_onVideoFrameUpdate(
     env: JNIEnv,
     _class: JClass,
