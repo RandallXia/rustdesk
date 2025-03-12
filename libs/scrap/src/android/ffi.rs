@@ -9,7 +9,11 @@ use jni::{
     JavaVM,
 };
 
-use hbb_common::{message_proto::MultiClipboards, protobuf::Message};
+use hbb_common::{
+    config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
+    message_proto::MultiClipboards,
+    protobuf::Message，
+};
 use jni::errors::{Error as JniError, Result as JniResult};
 use lazy_static::lazy_static;
 use serde::Deserialize;
