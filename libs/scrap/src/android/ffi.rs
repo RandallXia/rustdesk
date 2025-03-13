@@ -2,6 +2,7 @@ use jni::objects::JByteBuffer;
 use jni::objects::JString;
 use jni::objects::JValue;
 use jni::sys::jboolean;
+use jni::sys::jstring;
 use jni::JNIEnv;
 use jni::{
     objects::{GlobalRef, JClass, JObject},
@@ -9,11 +10,7 @@ use jni::{
     JavaVM,
 };
 
-use hbb_common::{
-    config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
-    message_proto::MultiClipboards,
-    protobuf::Message，
-};
+use hbb_common::{ message_proto::MultiClipboards,protobuf::Message};
 use jni::errors::{Error as JniError, Result as JniResult};
 use lazy_static::lazy_static;
 use serde::Deserialize;
@@ -128,7 +125,7 @@ pub extern "system" fn Java_ffi_FFI_getMyId(
     env: JNIEnv,
     _class: JClass,
 ) -> jstring {
-    let id = get_id();
+    let id = hbb_common::config::Config::get_id();
     let output = env.new_string(id).expect("Failed to create Java string");
     output.into_raw()
 }
