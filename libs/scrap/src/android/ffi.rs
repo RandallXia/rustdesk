@@ -10,6 +10,19 @@ use jni::{
     JavaVM,
 };
 
+use serde_json::{json, Value};
+use crate::ui_session_interface::InvokeUiSession;
+use hbb_common::ResultType;
+use crate::keyboard::input_source::{change_input_source, get_cur_session_input_source};
+use crate::{
+    client::file_trait::FileManager,
+    common::{make_fd_to_json, make_vec_fd_to_json},
+    flutter::{
+        self, session_add, session_add_existed, session_start_, sessions, try_sync_peer_option,
+    },
+    input::*,
+    ui_interface::{self, *},
+};
 use hbb_common::{message_proto::MultiClipboards, protobuf::Message};
 use jni::errors::{Error as JniError, Result as JniResult};
 use lazy_static::lazy_static;
@@ -663,263 +676,6 @@ pub extern "system" fn Java_ffi_FFI_sessionAdd(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionClose(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 移除会话
-    let session = match SESSIONS.write() {
-        Ok(mut sessions) => sessions.remove(&session_id),
-        Err(e) => {
-            log::error!("Failed to remove session: {:?}", e);
-            None
-        }
-    };
-    
-    // 关闭会话
-    if let Some(session) = session {
-        // 释放按键
-        crate::keyboard::release_remote_keys("map");
-        session.close();
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionRefresh(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    display: jint,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 刷新视频
-    if let Some(session) = session {
-        session.refresh_video(display);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionInputKey(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    name: JString,
-    down: jboolean,
-    press: jboolean,
-    alt: jboolean,
-    ctrl: jboolean,
-    shift: jboolean,
-    command: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let name: String = match env.get_string(name) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get name string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 处理键盘输入
-    if let Some(session) = session {
-        session.input_key(
-            &name, 
-            down != 0, 
-            press != 0, 
-            alt != 0, 
-            ctrl != 0, 
-            shift != 0, 
-            command != 0
-        );
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionInputString(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    value: JString,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let value: String = match env.get_string(value) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get value string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 处理字符串输入
-    if let Some(session) = session {
-        session.input_string(&value);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionLockScreen(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 锁定屏幕
-    if let Some(session) = session {
-        session.lock_screen();
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionCtrlAltDel(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 发送 Ctrl+Alt+Del
-    if let Some(session) = session {
-        session.ctrl_alt_del();
-    }
-}
-
-#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_sessionSwitchDisplay(
     env: JNIEnv,
     _class: JClass,
@@ -964,94 +720,6 @@ pub extern "system" fn Java_ffi_FFI_sessionSwitchDisplay(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionReconnect(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    force_relay: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 重新连接
-    if let Some(session) = session {
-        session.reconnect(force_relay != 0);
-    }
-}
-
-// 主要功能函数
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getMyId(
-    env: JNIEnv,
-    _class: JClass,
-) -> jstring {
-    let id = hbb_common::config::Config::get_id();
-    let output = env.new_string(id).expect("Failed to create Java string");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getUuid(
-    env: JNIEnv,
-    _class: JClass,
-) -> jstring {
-    let uuid = get_uuid();
-    let output = env.new_string(uuid).expect("Failed to create Java string");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getVersion(
-    env: JNIEnv,
-    _class: JClass,
-) -> jstring {
-    let version = get_version();
-    let output = env.new_string(version).expect("Failed to create Java string");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getOption(
-    env: JNIEnv,
-    _class: JClass,
-    key: JString,
-) -> jstring {
-    let key: String = match env.get_string(key) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get key string: {:?}", e);
-            return env.new_string("").unwrap().into_raw();
-        }
-    };
-    
-    let value = get_option(key);
-    let output = env.new_string(value).expect("Failed to create Java string");
-    output.into_raw()
-}
-
-#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_setOption(
     env: JNIEnv,
     _class: JClass,
@@ -1077,43 +745,9 @@ pub extern "system" fn Java_ffi_FFI_setOption(
     set_option(key, value);
 }
 
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getOptions(
-    env: JNIEnv,
-    _class: JClass,
-) -> jstring {
-    let options = get_options();
-    let output = env.new_string(options).expect("Failed to create Java string");
-    output.into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_setOptions(
-    env: JNIEnv,
-    _class: JClass,
-    json: JString,
-) {
-    let json: String = match env.get_string(json) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get json string: {:?}", e);
-            return;
-        }
-    };
-    
-    let map: HashMap<String, String> = serde_json::from_str(&json).unwrap_or(HashMap::new());
-    if !map.is_empty() {
-        set_options(map);
-    }
-}
-
 // 辅助函数
 fn get_uuid() -> String {
     hbb_common::config::Config::get_uuid()
-}
-
-fn get_version() -> String {
-    crate::get_version()
 }
 
 fn get_option(key: String) -> String {
@@ -1126,253 +760,6 @@ fn set_option(key: String, value: String) {
 
 fn get_options() -> String {
     ui_interface::get_options()
-}
-
-fn set_options(options: HashMap<String, String>) {
-    ui_interface::set_options(options);
-}
-
-// 文件传输相关方法
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionReadRemoteDir(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    path: JString,
-    include_hidden: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let path: String = match env.get_string(path) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get path string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 读取远程目录
-    if let Some(session) = session {
-        session.read_remote_dir(path, include_hidden != 0);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionSendFiles(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    act_id: jint,
-    path: JString,
-    to: JString,
-    file_num: jint,
-    include_hidden: jboolean,
-    is_remote: jboolean,
-    is_dir: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let path: String = match env.get_string(path) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get path string: {:?}", e);
-            return;
-        }
-    };
-    
-    let to: String = match env.get_string(to) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get to string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 发送文件
-    if let Some(session) = session {
-        session.send_files(act_id, path, to, file_num, include_hidden != 0, is_remote != 0);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionCancelJob(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    act_id: jint,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 取消任务
-    if let Some(session) = session {
-        session.cancel_job(act_id);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionRemoveFile(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    act_id: jint,
-    path: JString,
-    file_num: jint,
-    is_remote: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let path: String = match env.get_string(path) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get path string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 删除文件
-    if let Some(session) = session {
-        session.remove_file(act_id, path, file_num, is_remote != 0);
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionCreateDir(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    act_id: jint,
-    path: JString,
-    is_remote: jboolean,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let path: String = match env.get_string(path) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get path string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 创建目录
-    if let Some(session) = session {
-        session.create_dir(act_id, path, is_remote != 0);
-    }
 }
 
 #[no_mangle]
@@ -1415,102 +802,6 @@ pub extern "system" fn Java_ffi_FFI_sessionGetPlatform(
     };
     
     env.new_string(platform).unwrap().into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionGetToggleOption(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    arg: JString,
-) -> jboolean {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return 0;
-        }
-    };
-    
-    let arg: String = match env.get_string(arg) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get arg string: {:?}", e);
-            return 0;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return 0;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 获取选项
-    let option = if let Some(session) = session {
-        session.get_toggle_option(arg)
-    } else {
-        false
-    };
-    
-    if option { 1 } else { 0 }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionToggleOption(
-    env: JNIEnv,
-    _class: JClass,
-    session_id: JString,
-    value: JString,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let value: String = match env.get_string(value) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get value string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取会话
-    let session = match SESSIONS.read() {
-        Ok(sessions) => sessions.get(&session_id).cloned(),
-        Err(e) => {
-            log::error!("Failed to get session: {:?}", e);
-            None
-        }
-    };
-    
-    // 切换选项
-    if let Some(session) = session {
-        session.toggle_option(value);
-    }
 }
 
 #[no_mangle]
@@ -1764,23 +1055,6 @@ pub extern "system" fn Java_ffi_FFI_changeTheme(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_ffi_FFI_changeLanguage(
-    env: JNIEnv,
-    _class: JClass,
-    lang: JString,
-) {
-    let lang: String = match env.get_string(lang) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get lang string: {:?}", e);
-            return;
-        }
-    };
-    
-    change_language(lang);
-}
-
-#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_videoSaveDirectory(
     env: JNIEnv,
     _class: JClass,
@@ -1898,23 +1172,6 @@ fn get_displays() -> String {
         }
         display_info
     }
-}
-
-// 初始化 JVM 和上下文
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_init(
-    env: JNIEnv,
-    _class: JClass,
-    ctx: JObject,
-) {
-    let vm = env.get_java_vm().unwrap();
-    *JVM.write().unwrap() = Some(vm);
-    
-    let ctx = env.new_global_ref(ctx).unwrap();
-    *MAIN_CONTEXT.write().unwrap() = Some(ctx);
-    
-    // 初始化日志和配置
-    hbb_common::init_log(false, "android_ffi");
 }
 
 // 启动服务器
@@ -2276,33 +1533,6 @@ fn get_license() -> String {
     crate::get_license()
 }
 
-// 剪贴板管理
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_setClipboardManager(
-    env: JNIEnv,
-    _class: JClass,
-    clipboard_manager: JObject,
-) {
-    let clipboard_manager = env.new_global_ref(clipboard_manager).unwrap();
-    *CLIPBOARD_MANAGER.write().unwrap() = Some(clipboard_manager);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_onClipboardUpdate(
-    env: JNIEnv,
-    _class: JClass,
-    clips: JByteBuffer,
-) {
-    let clips_ptr = env.get_direct_buffer_address(clips).unwrap();
-    let clips_len = env.get_direct_buffer_capacity(clips).unwrap();
-    let clips_slice = unsafe { std::slice::from_raw_parts(clips_ptr, clips_len) };
-    
-    // 处理剪贴板更新
-    if let Ok(clips_str) = std::str::from_utf8(clips_slice) {
-        crate::clipboard_service::update_clipboard(clips_str.to_owned(), false);
-    }
-}
-
 #[no_mangle]
 pub extern "system" fn Java_ffi_FFI_isServiceClipboardEnabled(
     _env: JNIEnv,
@@ -2458,42 +1688,6 @@ pub extern "system" fn Java_ffi_FFI_sessionCtrlAltDel(
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         session.ctrl_alt_del();
     }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_sessionSwitchDisplay(
-    env: JNIEnv,
-    _class: JClass,
-    is_desktop: jboolean,
-    session_id: JString,
-    value: jintArray,
-) {
-    let session_id: String = match env.get_string(session_id) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get session_id string: {:?}", e);
-            return;
-        }
-    };
-    
-    let session_id = match uuid::Uuid::parse_str(&session_id) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            log::error!("Failed to parse session_id as UUID: {:?}", e);
-            return;
-        }
-    };
-    
-    // 获取 value 数组
-    let value_len = env.get_array_length(value).unwrap_or(0);
-    let mut value_vec = vec![0; value_len as usize];
-    if let Err(e) = env.get_int_array_region(value, 0, &mut value_vec) {
-        log::error!("Failed to get value array: {:?}", e);
-        return;
-    }
-    
-    // 切换显示
-    sessions::session_switch_display(is_desktop != 0, session_id, value_vec);
 }
 
 #[no_mangle]
@@ -2682,16 +1876,6 @@ pub extern "system" fn Java_ffi_FFI_sessionStart(
     }
 }
 
-// 全局配置相关方法
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getMyId(
-    env: JNIEnv,
-    _class: JClass,
-) -> jstring {
-    let id = get_id();
-    env.new_string(id).unwrap().into_raw()
-}
-
 #[no_mangle]
 pub extern "system" fn Java_ffi_FFI_getUuid(
     env: JNIEnv,
@@ -2711,77 +1895,12 @@ pub extern "system" fn Java_ffi_FFI_getVersion(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_ffi_FFI_getOption(
-    env: JNIEnv,
-    _class: JClass,
-    key: JString,
-) -> jstring {
-    let key: String = match env.get_string(key) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get key string: {:?}", e);
-            return env.new_string("").unwrap().into_raw();
-        }
-    };
-    
-    let value = get_option(key);
-    env.new_string(value).unwrap().into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_setOption(
-    env: JNIEnv,
-    _class: JClass,
-    key: JString,
-    value: JString,
-) {
-    let key: String = match env.get_string(key) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get key string: {:?}", e);
-            return;
-        }
-    };
-    
-    let value: String = match env.get_string(value) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get value string: {:?}", e);
-            return;
-        }
-    };
-    
-    // 设置选项
-    set_option(key, value);
-}
-
-#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_getOptions(
     env: JNIEnv,
     _class: JClass,
 ) -> jstring {
     let options = get_options();
     env.new_string(options).unwrap().into_raw()
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_setOptions(
-    env: JNIEnv,
-    _class: JClass,
-    json: JString,
-) {
-    let json: String = match env.get_string(json) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get json string: {:?}", e);
-            return;
-        }
-    };
-    
-    let map: HashMap<String, String> = serde_json::from_str(&json).unwrap_or(HashMap::new());
-    if !map.is_empty() {
-        set_options(map);
-    }
 }
 
 // 文件传输相关方法
@@ -2847,23 +1966,6 @@ pub extern "system" fn Java_ffi_FFI_changeLanguage(
     };
     
     change_language(lang);
-}
-
-#[no_mangle]
-pub extern "system" fn Java_ffi_FFI_changeTheme(
-    env: JNIEnv,
-    _class: JClass,
-    dark: JString,
-) {
-    let dark: String = match env.get_string(dark) {
-        Ok(s) => s.into(),
-        Err(e) => {
-            log::error!("Failed to get dark string: {:?}", e);
-            return;
-        }
-    };
-    
-    change_theme(dark);
 }
 
 // 测试服务器连接
