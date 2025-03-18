@@ -132,7 +132,7 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
                     requestMediaProjection()
-                    val myId = FFI.mainGetMyId()
+                    val myId = FFI.getMyId()
                     Log.d(logTag + "R", "mainGetMyId: $myId")
                     result.success(true)
                 }
