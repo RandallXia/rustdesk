@@ -10,7 +10,7 @@ use jni::{
     JavaVM,
 };
 
-use crate::{
+use rustdesk::{
     common::{make_fd_to_json, make_vec_fd_to_json},
     flutter::{
         self, session_add, session_add_existed, session_start_, sessions, try_sync_peer_option,
@@ -43,12 +43,6 @@ use std::time::{Duration, Instant, SystemTime};
 
 // 定义 SessionID 类型
 pub type SessionID = uuid::Uuid;
-
-// 这里需要添加 Session 结构体的定义或导入
-// 例如：
-struct Session {
-    // 字段定义
-}
 
 lazy_static! {
     static ref JVM: RwLock<Option<JavaVM>> = RwLock::new(None);
