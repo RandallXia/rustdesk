@@ -17,6 +17,7 @@ hwcodec = ["dep:hwcodec"]
 vram = ["hwcodec/vram"]
 
 [dependencies]
+rustdesk = { path = "../.."}
 cfg-if = "1.0"
 num_cpus = "1.15"
 lazy_static = "1.4"
