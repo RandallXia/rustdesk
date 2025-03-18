@@ -10,6 +10,17 @@ use jni::{
     JavaVM,
 };
 
+use crate::{
+    common::{make_fd_to_json, make_vec_fd_to_json},
+    flutter::{
+        self, session_add, session_add_existed, session_start_, sessions, try_sync_peer_option,
+    },
+    input::*,
+    ui_interface::{self, *},
+    client::*,
+    flutter_ffi::{EventToUI, SessionID},
+    ui_session_interface::{io_loop, InvokeUiSession, Session},
+};
 use serde_json::{json, Value};
 use hbb_common::{
     config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
