@@ -11,19 +11,15 @@ use jni::{
 };
 
 use serde_json::{json, Value};
-use crate::ui_session_interface::InvokeUiSession;
-use hbb_common::ResultType;
-use crate::keyboard::input_source::{change_input_source, get_cur_session_input_source};
-use crate::{
-    client::file_trait::FileManager,
-    common::{make_fd_to_json, make_vec_fd_to_json},
-    flutter::{
-        self, session_add, session_add_existed, session_start_, sessions, try_sync_peer_option,
-    },
-    input::*,
-    ui_interface::{self, *},
+use hbb_common::{
+    config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
+    fs, log,
+    message_proto::FileDirectory, // 正确导入 FileDirectory
+    rendezvous_proto::ConnType,
+    ResultType, // 只保留一次导入
+    protobuf::Message,
+    message_proto::MultiClipboards,
 };
-use hbb_common::{message_proto::MultiClipboards, protobuf::Message};
 use jni::errors::{Error as JniError, Result as JniResult};
 use lazy_static::lazy_static;
 use serde::Deserialize;
@@ -34,16 +30,14 @@ use std::sync::atomic::{AtomicPtr, Ordering::SeqCst};
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
-// 导入 RustDesk 核心功能所需的模块
-use hbb_common::{
-    config::{self, LocalConfig, PeerConfig, PeerInfoSerde},
-    fs, log,
-    rendezvous_proto::ConnType,
-    ResultType,
-};
-
 // 定义 SessionID 类型
 pub type SessionID = uuid::Uuid;
+
+// 这里需要添加 Session 结构体的定义或导入
+// 例如：
+struct Session {
+    // 字段定义
+}
 
 lazy_static! {
     static ref JVM: RwLock<Option<JavaVM>> = RwLock::new(None);
@@ -758,10 +752,6 @@ fn set_option(key: String, value: String) {
     ui_interface::set_option(key, value);
 }
 
-fn get_options() -> String {
-    ui_interface::get_options()
-}
-
 #[no_mangle]
 pub extern "system" fn Java_ffi_FFI_sessionGetPlatform(
     env: JNIEnv,
@@ -1472,7 +1462,7 @@ fn session_start(session_id: uuid::Uuid, id: String) -> ResultType<()> {
 }
 
 // 文件传输辅助函数
-fn read_dir(path: &str, include_hidden: bool) -> ResultType<fs::FileDirectory> {
+fn read_dir(path: &str, include_hidden: bool) -> ResultType<FileDirectory> {
     fs::read_dir(path, include_hidden)
 }
 
@@ -1502,14 +1492,6 @@ fn get_options() -> String {
 
 fn set_options(options: HashMap<String, String>) {
     ui_interface::set_options(options);
-}
-
-fn get_option(key: String) -> String {
-    ui_interface::get_option(key)
-}
-
-fn set_option(key: String, value: String) {
-    ui_interface::set_option(key, value);
 }
 
 fn get_local_option(key: String) -> String {
