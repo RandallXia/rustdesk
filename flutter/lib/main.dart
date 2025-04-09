@@ -35,6 +35,11 @@ int? kWindowId;
 WindowType? kWindowType;
 late List<String> kBootArgs;
 
+const String idServerUrl = "124.221.195.174";
+const String relayServerUrl = "";
+const String apiServerUrl = "";
+const String keyUrl = "ojP9lCRj294cvLPsKtuUjAA3tEsx0yPjqcwGJVYzJJE=";
+
 Future<void> main(List<String> args) async {
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();

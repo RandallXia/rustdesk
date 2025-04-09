@@ -5,7 +5,7 @@ import 'dart:math';
 import 'package:extended_text/extended_text.dart';
 import 'package:flutter_hbb/desktop/widgets/dragable_divider.dart';
 import 'package:percent_indicator/percent_indicator.dart';
-import 'package:desktop_drop/desktop_drop.dart';
+// import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -166,16 +166,7 @@ class _FileManagerPageState extends State<FileManagerPage>
   }
 
   Widget dropArea(FileManagerView fileView) {
-    return DropTarget(
-        onDragDone: (detail) =>
-            handleDragDone(detail, fileView.controller.isLocal),
-        onDragEntered: (enter) {
-          _dropMaskVisible.value = true;
-        },
-        onDragExited: (exit) {
-          _dropMaskVisible.value = false;
-        },
-        child: fileView);
+    return SizedBox();
   }
 
   Widget generateCard(Widget child) {
@@ -351,22 +342,22 @@ class _FileManagerPageState extends State<FileManagerPage>
     );
   }
 
-  void handleDragDone(DropDoneDetails details, bool isLocal) {
-    if (isLocal) {
-      // ignore local
-      return;
-    }
-    final items = SelectedItems(isLocal: false);
-    for (var file in details.files) {
-      final f = File(file.path);
-      items.add(Entry()
-        ..path = file.path
-        ..name = file.name
-        ..size = FileSystemEntity.isDirectorySync(f.path) ? 0 : f.lengthSync());
-    }
-    final otherSideData = model.localController.directoryData();
-    model.remoteController.sendFiles(items, otherSideData);
-  }
+  // void handleDragDone(DropDoneDetails details, bool isLocal) {
+  //   if (isLocal) {
+  //     // ignore local
+  //     return;
+  //   }
+  //   final items = SelectedItems(isLocal: false);
+  //   for (var file in details.files) {
+  //     final f = File(file.path);
+  //     items.add(Entry()
+  //       ..path = file.path
+  //       ..name = file.name
+  //       ..size = FileSystemEntity.isDirectorySync(f.path) ? 0 : f.lengthSync());
+  //   }
+  //   final otherSideData = model.localController.directoryData();
+  //   model.remoteController.sendFiles(items, otherSideData);
+  // }
 }
 
 class FileManagerView extends StatefulWidget {
