@@ -28,20 +28,25 @@ impl AndroidEventCallback {
     }
 
     pub fn send_event(&self, event: String) -> bool {
-        let res = jni::AttachGuard::new()
-            .and_then(|mut env| {
-                env.call_method(
-                    &self.callback_obj,
-                    "onEvent",
-                    "(Ljava/lang/String;)V",
-                    &[env.new_string(event)?.into()],
-                )
-                .map(|_| true)
-            })
-            .unwrap_or_else(|e| {
-                log::error!("通过JNI发送事件失败: {:?}", e);
-                false
-            });
+        let res = if let Some(jvm) = scrap::android::ffi::JVM.read().unwrap().as_ref() {
+            jvm.attach_current_thread()
+                .and_then(|mut env| {
+                    env.call_method(
+                        &self.callback_obj,
+                        "onEvent",
+                        "(Ljava/lang/String;)V",
+                        &[env.new_string(event)?.into()],
+                    )
+                    .map(|_| true)
+                })
+                .unwrap_or_else(|e| {
+                    log::error!("通过JNI发送事件失败: {:?}", e);
+                    false
+                })
+        } else {
+            log::error!("无法获取JavaVM实例");
+            false
+        };
         res
     }
 }
@@ -83,7 +88,7 @@ pub extern "C" fn register_global_event_callback(
 // 注销特定应用类型的全局事件回调
 #[no_mangle]
 pub extern "C" fn unregister_global_event_callback(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JObject,
     app_type: jni::objects::JString,
 ) -> jni::sys::jboolean {
@@ -239,7 +244,7 @@ impl Default for AndroidSessionHandler {
 // 注册会话事件回调
 #[no_mangle]
 pub extern "C" fn register_session_event_callback(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JObject,
     session_id: jni::objects::JString,
     callback: JObject,
@@ -343,7 +348,7 @@ pub fn session_start_with_android_callback(
 // 启动会话的JNI入口点
 #[no_mangle]
 pub extern "C" fn start_session(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JObject,
     session_id: jni::objects::JString,
     peer_id: jni::objects::JString,
