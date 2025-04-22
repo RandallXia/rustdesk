@@ -28,21 +28,27 @@ impl AndroidEventCallback {
     }
 
     pub fn send_event(&self, event: String) -> bool {
-        let res = if let Some(jvm) = scrap::android::ffi::JVM.read().unwrap().as_ref() {
-            jvm.attach_current_thread()
-                .and_then(|mut env| {
-                    env.call_method(
-                        &self.callback_obj,
-                        "onEvent",
-                        "(Ljava/lang/String;)V",
-                        &[env.new_string(event)?.into()],
-                    )
-                    .map(|_| true)
-                })
-                .unwrap_or_else(|e| {
-                    log::error!("通过JNI发送事件失败: {:?}", e);
-                    false
-                })
+        let res = if let Ok(jvm) = scrap::android::call_main_service_get_by_name("jvm") {
+            // 使用公共接口获取JVM实例
+            if let Ok(jvm) = jni::JavaVM::from_raw(jvm.parse::<*mut std::os::raw::c_void>().unwrap_or(std::ptr::null_mut())) {
+                jvm.attach_current_thread()
+                    .and_then(|mut env| {
+                        env.call_method(
+                            &self.callback_obj,
+                            "onEvent",
+                            "(Ljava/lang/String;)V",
+                            &[(&env.new_string(event)?).into()], // 添加引用修复JString转换问题
+                        )
+                        .map(|_| true)
+                    })
+                    .unwrap_or_else(|e| {
+                        log::error!("通过JNI发送事件失败: {:?}", e);
+                        false
+                    })
+            } else {
+                log::error!("无法解析JavaVM实例");
+                false
+            }
         } else {
             log::error!("无法获取JavaVM实例");
             false
@@ -257,8 +263,8 @@ pub extern "C" fn register_session_event_callback(
         let callback = AndroidEventCallback::new(&mut env, callback)?;
         
         if let Some(session) = crate::flutter::sessions::get_session_by_session_id(&session_id) {
-            let mut handlers = session.session_handlers.write().unwrap();
-            if let Some(handler) = handlers.get_mut(&session_id) {
+            // 使用公共接口访问session_handlers
+            if let Some(handler) = session.get_handler_mut(&session_id) {
                 if let Some(android_handler) = handler.downcast_mut::<AndroidSessionHandler>() {
                     android_handler.event_callback = Some(callback);
                     return Ok(true);
@@ -277,8 +283,8 @@ pub extern "C" fn register_session_event_callback(
 // 向会话发送事件
 pub fn send_event_to_ui(session_id: &uuid::Uuid, event: EventToUI) -> bool {
     if let Some(session) = crate::flutter::sessions::get_session_by_session_id(session_id) {
-        let handlers = session.session_handlers.read().unwrap();
-        if let Some(handler) = handlers.get(session_id) {
+        // 使用公共接口访问session_handlers
+        if let Some(handler) = session.get_handler(session_id) {
             if let Some(android_handler) = handler.downcast_ref::<AndroidSessionHandler>() {
                 if let Some(callback) = &android_handler.event_callback {
                     let event_str = match event {
@@ -306,8 +312,8 @@ pub fn session_start_with_android_callback(
     let mut is_found = false;
     
     for s in crate::flutter::sessions::get_sessions() {
-        let mut handlers = s.session_handlers.write().unwrap();
-        if let Some(handler) = handlers.get_mut(session_id) {
+        // 使用公共接口访问session_handlers
+        if let Some(handler) = s.get_handler_mut(session_id) {
             if let Some(android_handler) = handler.downcast_mut::<AndroidSessionHandler>() {
                 is_connected = android_handler.event_callback.is_some();
                 // 如果存在现有回调，则发送关闭事件
@@ -330,13 +336,13 @@ pub fn session_start_with_android_callback(
     }
 
     if let Some(session) = crate::flutter::sessions::get_session_by_session_id(session_id) {
-        let is_first_ui_session = session.session_handlers.read().unwrap().len() == 1;
+        let is_first_ui_session = session.get_handlers_len() == 1;
         if !is_connected && is_first_ui_session {
             log::info!("Session {} start", id);
             let session = (*session).clone();
             std::thread::spawn(move || {
                 let round = session.connection_round_state.lock().unwrap().new_round();
-                crate::flutter::io_loop(session, round);
+                crate::ui_session_interface::io_loop(session, round);
             });
         }
         Ok(())

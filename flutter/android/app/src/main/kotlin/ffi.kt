@@ -25,4 +25,10 @@ object FFI {
     external fun getLocalOption(key: String): String
     external fun onClipboardUpdate(clips: ByteBuffer)
     external fun isServiceClipboardEnabled(): Boolean
+    
+    // Android FFI methods for event callbacks
+    external fun registerGlobalEventCallback(appType: String, callback: Any): Boolean
+    external fun unregisterGlobalEventCallback(appType: String): Boolean
+    external fun registerSessionEventCallback(sessionId: String, callback: Any): Boolean
+    external fun startSession(sessionId: String, peerId: String, callback: Any): Boolean
 }
