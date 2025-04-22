@@ -28,9 +28,11 @@ impl AndroidEventCallback {
     }
 
     pub fn send_event(&self, event: String) -> bool {
-        let res = if let Ok(jvm) = scrap::android::call_main_service_get_by_name("jvm") {
+        let res = if let Ok(jvm_str) = scrap::android::call_main_service_get_by_name("jvm") {
             // 使用公共接口获取JVM实例
-            if let Ok(jvm) = jni::JavaVM::from_raw(jvm.parse::<*mut std::os::raw::c_void>().unwrap_or(std::ptr::null_mut())) {
+            if let Ok(jvm_ptr) = jvm_str.parse::<usize>() {
+                let jvm_raw_ptr = jvm_ptr as *mut jni::sys::JavaVM;
+                if let Ok(jvm) = unsafe { jni::JavaVM::from_raw(jvm_raw_ptr) } {
                 jvm.attach_current_thread()
                     .and_then(|mut env| {
                         env.call_method(
@@ -44,7 +46,7 @@ impl AndroidEventCallback {
                     .unwrap_or_else(|e| {
                         log::error!("通过JNI发送事件失败: {:?}", e);
                         false
-                    })
+                    })}
             } else {
                 log::error!("无法解析JavaVM实例");
                 false
@@ -59,7 +61,7 @@ impl AndroidEventCallback {
 
 // 为特定应用类型注册全局事件回调
 #[no_mangle]
-pub extern "C" fn register_global_event_callback(
+pub extern "system" fn Java_ffi_FFI_register_global_event_callback(
     env: JNIEnv,
     _: JObject,
     app_type: jni::objects::JString,
@@ -93,7 +95,7 @@ pub extern "C" fn register_global_event_callback(
 
 // 注销特定应用类型的全局事件回调
 #[no_mangle]
-pub extern "C" fn unregister_global_event_callback(
+pub extern "system" fn Java_ffi_FFI_unregister_global_event_callback(
     mut env: JNIEnv,
     _: JObject,
     app_type: jni::objects::JString,
@@ -249,7 +251,7 @@ impl Default for AndroidSessionHandler {
 
 // 注册会话事件回调
 #[no_mangle]
-pub extern "C" fn register_session_event_callback(
+pub extern "system" fn Java_ffi_FFI_register_session_event_callback(
     mut env: JNIEnv,
     _: JObject,
     session_id: jni::objects::JString,
@@ -264,7 +266,7 @@ pub extern "C" fn register_session_event_callback(
         
         if let Some(session) = crate::flutter::sessions::get_session_by_session_id(&session_id) {
             // 使用公共接口访问session_handlers
-            if let Some(handler) = session.get_handler_mut(&session_id) {
+            if let Some(handler) = session.ui_handler.session_handlers.write().unwrap().get_mut(&session_id) {
                 if let Some(android_handler) = handler.downcast_mut::<AndroidSessionHandler>() {
                     android_handler.event_callback = Some(callback);
                     return Ok(true);
@@ -284,7 +286,7 @@ pub extern "C" fn register_session_event_callback(
 pub fn send_event_to_ui(session_id: &uuid::Uuid, event: EventToUI) -> bool {
     if let Some(session) = crate::flutter::sessions::get_session_by_session_id(session_id) {
         // 使用公共接口访问session_handlers
-        if let Some(handler) = session.get_handler(session_id) {
+        if let Some(handler) = session.ui_handler.session_handlers.read().unwrap().get(session_id) {
             if let Some(android_handler) = handler.downcast_ref::<AndroidSessionHandler>() {
                 if let Some(callback) = &android_handler.event_callback {
                     let event_str = match event {
@@ -313,7 +315,7 @@ pub fn session_start_with_android_callback(
     
     for s in crate::flutter::sessions::get_sessions() {
         // 使用公共接口访问session_handlers
-        if let Some(handler) = s.get_handler_mut(session_id) {
+        if let Some(handler) = s.ui_handler.session_handlers.write().unwrap().get_mut(session_id) {
             if let Some(android_handler) = handler.downcast_mut::<AndroidSessionHandler>() {
                 is_connected = android_handler.event_callback.is_some();
                 // 如果存在现有回调，则发送关闭事件
@@ -336,7 +338,7 @@ pub fn session_start_with_android_callback(
     }
 
     if let Some(session) = crate::flutter::sessions::get_session_by_session_id(session_id) {
-        let is_first_ui_session = session.get_handlers_len() == 1;
+        let is_first_ui_session = session.ui_handler.session_handlers.read().unwrap().len() == 1;
         if !is_connected && is_first_ui_session {
             log::info!("Session {} start", id);
             let session = (*session).clone();
@@ -353,7 +355,7 @@ pub fn session_start_with_android_callback(
 
 // 启动会话的JNI入口点
 #[no_mangle]
-pub extern "C" fn start_session(
+pub extern "system" fn Java_ffi_FFI_start_session(
     mut env: JNIEnv,
     _: JObject,
     session_id: jni::objects::JString,
